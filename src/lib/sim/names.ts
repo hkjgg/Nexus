@@ -1,0 +1,15 @@
+/** Name pools for generated drivers. Fictional people, fictional company. */
+
+export const FIRST_NAMES: readonly string[] = [
+  'Karim', 'Rania', 'Omar', 'Layla', 'Tarek', 'Nadia', 'Sami', 'Yasmine',
+  'Fadi', 'Maya', 'Hadi', 'Dana', 'Ziad', 'Nour', 'Rami', 'Salma',
+  'Jad', 'Lina', 'Bassam', 'Hala', 'Marwan', 'Rita', 'Elias', 'Joumana',
+  'Wassim', 'Carla', 'Georges', 'Amira', 'Nabil', 'Leila', 'Fouad', 'Mira',
+  'Charbel', 'Zeina', 'Antoine', 'Rasha', 'Michel', 'Hiba', 'Walid', 'Tala',
+];
+
+export const LAST_NAMES: readonly string[] = [
+  'Haddad', 'Khoury', 'Nassar', 'Saliba', 'Aoun', 'Karam', 'Rizk', 'Abboud',
+  'Chidiac', 'Fares', 'Gebran', 'Mansour', 'Sleiman', 'Zgheib', 'Daher', 'Moussa',
+  'Bitar', 'Sarkis', 'Tannous', 'Younes', 'Hobeika', 'Maalouf', 'Attieh', 'Douaihy',
+];

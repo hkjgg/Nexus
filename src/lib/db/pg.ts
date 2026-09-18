@@ -35,8 +35,16 @@ export function getPool(): Pool {
       // Supabase terminates TLS with its own certificate chain, which Node
       // does not have a root for; verification is therefore relaxed.
       ssl: shouldUseSsl(connectionString) ? { rejectUnauthorized: false } : false,
-      max: 5,
+      // Deliberately small. On Vercel every serverless instance gets its own
+      // pool, so a generous `max` multiplied by the instance count is how a
+      // Postgres runs out of connections under load. Two is enough for the
+      // handful of parallel queries a page issues, and the pooler absorbs the
+      // rest.
+      max: 2,
       idleTimeoutMillis: 30_000,
+      // Fail fast rather than hanging a request when the database is
+      // unreachable - the UI has something useful to say about that.
+      connectionTimeoutMillis: 10_000,
     });
   }
   return pool;

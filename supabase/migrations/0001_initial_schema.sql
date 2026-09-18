@@ -14,22 +14,38 @@ create extension if not exists "pgcrypto";
 -- ---------------------------------------------------------------------------
 -- Enums
 -- ---------------------------------------------------------------------------
-do $$ begin
-  create type vehicle_type    as enum ('motorbike', 'van', 'truck');
-  create type vehicle_status  as enum ('active', 'maintenance', 'idle');
-  create type driver_status   as enum ('on_shift', 'off_shift', 'on_break');
-  create type order_status    as enum (
-    'pending', 'assigned', 'picked_up', 'in_transit',
-    'delivered', 'delayed', 'cancelled', 'failed'
-  );
-  create type order_channel   as enum ('website', 'app', 'pos', 'marketplace', 'phone');
-  create type expense_category as enum (
-    'fuel', 'maintenance', 'driver_wage', 'vehicle_fixed', 'overhead'
-  );
-  create type alert_type      as enum ('operational', 'capacity', 'financial', 'fleet', 'anomaly');
-  create type alert_severity  as enum ('info', 'warning', 'critical');
-exception
-  when duplicate_object then null;
+-- Each type is guarded on its own so the block is safe to re-run even after a
+-- partially applied migration: a single `exception when duplicate_object`
+-- around all of them would silently skip every type after the first existing
+-- one.
+do $$
+declare
+  t record;
+begin
+  for t in
+    select * from (values
+      ('vehicle_type',     $def$('motorbike', 'van', 'truck')$def$),
+      ('vehicle_status',   $def$('active', 'maintenance', 'idle')$def$),
+      ('driver_status',    $def$('on_shift', 'off_shift', 'on_break')$def$),
+      ('order_status',     $def$('pending', 'assigned', 'picked_up', 'in_transit',
+                                 'delivered', 'delayed', 'cancelled', 'failed')$def$),
+      ('order_channel',    $def$('website', 'app', 'pos', 'marketplace', 'phone')$def$),
+      ('expense_category', $def$('fuel', 'maintenance', 'driver_wage', 'vehicle_fixed',
+                                 'overhead')$def$),
+      ('alert_type',       $def$('operational', 'capacity', 'financial', 'fleet',
+                                 'anomaly')$def$),
+      ('alert_severity',   $def$('info', 'warning', 'critical')$def$)
+    ) as v (type_name, labels)
+  loop
+    if not exists (
+      select 1
+        from pg_type ty
+        join pg_namespace n on n.oid = ty.typnamespace
+       where ty.typname = t.type_name and n.nspname = 'public'
+    ) then
+      execute format('create type public.%I as enum %s', t.type_name, t.labels);
+    end if;
+  end loop;
 end $$;
 
 -- ---------------------------------------------------------------------------

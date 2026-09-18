@@ -1,0 +1,83 @@
+# Applies the NEXUS schema and, optionally, regenerates the demo dataset.
+#
+# Run manually from the Actions tab. It exists because direct Postgres
+# connections to Supabase are blocked from some development environments,
+# while GitHub's runners can reach it - so this is the reliable way to get a
+# migration or a reseed onto the hosted database.
+#
+# Requires a DATABASE_URL repository secret: the direct Postgres connection
+# string for the target database.
+#
+#   postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres
+#
+# Migrations are recorded in `schema_migrations` and every statement is
+# guarded, so running this workflow repeatedly is safe: already-applied files
+# are skipped, and re-applying one would be a no-op anyway.
+
+name: Database setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: 'Also generate the demo dataset (pnpm seed)'
+        type: boolean
+        required: false
+        default: true
+      reset:
+        description: 'Truncate every table before seeding - DESTRUCTIVE'
+        type: boolean
+        required: false
+        default: false
+
+# One database, one writer: queue runs rather than letting two migrate at once.
+concurrency:
+  group: db-setup
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Migrate and seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fail early if DATABASE_URL is missing
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Apply migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm db:migrate
+
+      - name: Seed the demo dataset
+        if: ${{ inputs.seed }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ "${{ inputs.reset }}" = "true" ]; then
+            pnpm seed:reset
+          else
+            pnpm seed
+          fi

@@ -43,3 +43,6 @@ next-env.d.ts
 
 # seed / tooling output
 /scripts/**/*.log
+
+# Local Claude Code settings (not committed)
+.claude/settings.local.json

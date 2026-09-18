@@ -1,163 +1,290 @@
 /**
- * Placeholder home page for Week 1.
+ * The Command Center.
  *
- * Its only job is to prove the pipeline end to end: Postgres -> the SQL KPI
- * function -> the typed KPI layer -> a server component. Every number below is
- * read from the database at request time; none of them is hard-coded. The real
- * control tower UI replaces this page in a later milestone.
+ * Everything on this page is read from Postgres at request time through the
+ * KPI layer and the alert rules; there is not a single hard-coded figure in
+ * it. Each panel is its own async component behind a Suspense boundary, so the
+ * page frame paints immediately and each panel fills in as its query returns
+ * rather than the whole screen waiting on the slowest one.
  */
 
-import { hasDatabaseUrl } from '@/lib/db/env';
-import { query } from '@/lib/db/pg';
+import { Suspense } from 'react';
 import {
-  KPI_KEYS,
-  KPI_META,
-  formatDelta,
-  formatKpi,
-  getKpiComparison,
-  lastNDays,
-  percentChange,
-  precedingWindow,
-} from '@/lib/kpi';
+  Card,
+  Reveal,
+  SectionHeader,
+  SkeletonKpiGrid,
+  SkeletonPanel,
+  StatusBadge,
+} from '@/components/nexus';
+import { AlertsPanel } from '@/components/command-center/AlertsPanel';
+import { KpiGrid } from '@/components/command-center/KpiGrid';
+import { TrendChart, type TrendPoint } from '@/components/command-center/TrendChart';
+import { ZoneMap } from '@/components/command-center/ZoneMap';
+import { ZoneTable } from '@/components/command-center/ZoneTable';
+import { ALERT_WINDOW_DAYS, generateAlerts } from '@/lib/alerts';
+import { getDemoCompany, type CompanyContext } from '@/lib/db/company';
+import { query } from '@/lib/db/pg';
+import { getDriverPositions } from '@/lib/fleet/positions';
+import {
+  ALL_ZONES,
+  PARAM,
+  RANGE_META,
+  parseRangeKey,
+  parseZoneCode,
+  resolvePreviousRange,
+  resolveRange,
+  type RangeKey,
+} from '@/lib/filters';
+import { getKpiComparisonAgainst, getKpiSeries, getZonePerformance } from '@/lib/kpi';
 
-// KPIs are read live, so the page must not be cached at build time.
 export const dynamic = 'force-dynamic';
 
-type DemoCompany = { id: string; name: string; currency: string; timezone: string };
+type SearchParams = Record<string, string | string[] | undefined>;
 
-async function loadCompany(): Promise<DemoCompany | null> {
-  const rows = await query<DemoCompany>(
-    'select id, name, currency, timezone from companies where is_demo order by created_at limit 1',
-  );
-  return rows[0] ?? null;
+/** Everything the panels need to agree on, resolved once per request. */
+type ViewContext = {
+  company: CompanyContext;
+  rangeKey: RangeKey;
+  range: { from: Date; to: Date };
+  /** The window the KPI deltas are measured against. */
+  previousRange: { from: Date; to: Date };
+  zoneCode: string;
+  zoneId: string | null;
+};
+
+async function resolveView(searchParams: SearchParams): Promise<ViewContext | null> {
+  const company = await getDemoCompany();
+  if (!company) return null;
+
+  const rangeKey = parseRangeKey(searchParams[PARAM.range]);
+  const zoneCode = parseZoneCode(searchParams[PARAM.zone]);
+
+  let zoneId: string | null = null;
+  if (zoneCode !== ALL_ZONES) {
+    const rows = await query<{ id: string }>(
+      'select id from zones where company_id = $1 and code = $2',
+      [company.id, zoneCode],
+    );
+    zoneId = rows[0]?.id ?? null;
+  }
+
+  // One clock reading for both windows, so they cannot disagree by a tick.
+  const now = new Date();
+
+  return {
+    company,
+    rangeKey,
+    range: resolveRange(rangeKey, company.timezone, now),
+    previousRange: resolvePreviousRange(rangeKey, company.timezone, now),
+    zoneCode,
+    zoneId,
+  };
 }
 
-function Notice({ title, children }: { title: string; children: React.ReactNode }) {
+export default async function CommandCenterPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const view = await resolveView(await searchParams);
+
+  // The layout renders setup instructions when there is no tenant; reaching
+  // here without one would mean the database emptied mid-request.
+  if (!view) return null;
+
+  const meta = RANGE_META[view.rangeKey];
+  const zoneLabel = view.zoneCode === ALL_ZONES ? 'All zones' : `Zone ${view.zoneCode}`;
+
   return (
-    <div className="max-w-xl rounded-lg border border-neutral-300 p-6 dark:border-neutral-700">
-      <h2 className="mb-2 font-semibold">{title}</h2>
-      <div className="space-y-2 text-sm text-neutral-600 dark:text-neutral-400">{children}</div>
+    <div className="mx-auto w-full max-w-[1600px] space-y-4 p-3 sm:p-4 lg:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SectionHeader
+          as="h1"
+          title="Command Center"
+          description={`${meta.longLabel} · ${zoneLabel} · all figures read from the operations database`}
+        />
+        <StatusBadge tone="accent" dot>
+          Live
+        </StatusBadge>
+      </div>
+
+      <Suspense fallback={<SkeletonKpiGrid />}>
+        <KpiSection view={view} />
+      </Suspense>
+
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-3">
+        <Reveal className="xl:col-span-2" delay={0.04}>
+          <Card>
+            <SectionHeader
+              title="Volume and service level"
+              description={`Orders placed and the share delivered inside the promised window, by ${meta.bucket}`}
+            />
+            <div className="mt-4">
+              <Suspense fallback={<SkeletonPanel height="h-64" />}>
+                <TrendSection view={view} />
+              </Suspense>
+            </div>
+          </Card>
+        </Reveal>
+
+        <Reveal delay={0.08}>
+          <Card flush className="flex max-h-[32rem] flex-col">
+            <div className="p-4 pb-3">
+              <SectionHeader
+                title="Alerts"
+                description={`Rule-based scan of the last ${ALERT_WINDOW_DAYS} days`}
+              />
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <Suspense fallback={<SkeletonPanel lines={3} />}>
+                <AlertsSection view={view} />
+              </Suspense>
+            </div>
+          </Card>
+        </Reveal>
+      </div>
+
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-3">
+        <Reveal className="xl:col-span-2" delay={0.12}>
+          <Card flush>
+            <div className="p-4 pb-2">
+              <SectionHeader title="Zone performance" description="Worst on-time rate first" />
+            </div>
+            <Suspense fallback={<SkeletonPanel lines={4} />}>
+              <ZoneTableSection view={view} />
+            </Suspense>
+          </Card>
+        </Reveal>
+
+        <Reveal delay={0.16}>
+          <Card flush>
+            <div className="p-4 pb-3">
+              <SectionHeader
+                title="Zone map"
+                description="Polygons by on-time rate, dots are last known driver positions"
+              />
+            </div>
+            <Suspense fallback={<SkeletonPanel height="h-72" />}>
+              <MapSection view={view} />
+            </Suspense>
+          </Card>
+        </Reveal>
+      </div>
     </div>
   );
 }
 
-export default async function Home() {
-  return (
-    <main className="mx-auto max-w-3xl px-6 py-16">
-      <header className="mb-10">
-        <h1 className="font-mono text-4xl font-bold tracking-[0.2em]">NEXUS</h1>
-        <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-          Operations Intelligence Platform
-        </p>
-      </header>
+// ---------------------------------------------------------------------------
+// Panels. Each one owns its query, so each one streams in on its own.
+// ---------------------------------------------------------------------------
 
-      {await renderKpis()}
-    </main>
+async function KpiSection({ view }: { view: ViewContext }) {
+  const meta = RANGE_META[view.rangeKey];
+
+  const [comparison, series] = await Promise.all([
+    getKpiComparisonAgainst(
+      {
+        companyId: view.company.id,
+        from: view.range.from,
+        to: view.range.to,
+        zoneId: view.zoneId,
+      },
+      view.previousRange,
+    ),
+    getKpiSeries({
+      companyId: view.company.id,
+      from: view.range.from,
+      to: view.range.to,
+      zoneId: view.zoneId,
+      bucket: meta.bucket,
+      timeZone: view.company.timezone,
+    }),
+  ]);
+
+  return (
+    <KpiGrid
+      comparison={comparison}
+      series={series}
+      currency={view.company.currency}
+      comparisonLabel={meta.comparisonLabel}
+    />
   );
 }
 
-async function renderKpis() {
-  if (!hasDatabaseUrl()) {
-    return (
-      <Notice title="Not connected to a database">
-        <p>
-          <code>DATABASE_URL</code> is not set. Copy <code>.env.example</code> to{' '}
-          <code>.env.local</code> and fill it in.
-        </p>
-        <p>
-          Then run <code>pnpm db:migrate</code> followed by <code>pnpm seed</code>.
-        </p>
-      </Notice>
-    );
-  }
+async function TrendSection({ view }: { view: ViewContext }) {
+  const meta = RANGE_META[view.rangeKey];
 
-  let company: DemoCompany | null;
-  try {
-    company = await loadCompany();
-  } catch (error) {
-    return (
-      <Notice title="Could not reach the database">
-        <p>{error instanceof Error ? error.message : String(error)}</p>
-        <p>
-          Check <code>DATABASE_URL</code>, then run <code>pnpm db:migrate</code>.
-        </p>
-      </Notice>
-    );
-  }
-
-  if (!company) {
-    return (
-      <Notice title="No data yet">
-        <p>
-          The schema is in place but no demo company exists. Run <code>pnpm seed</code> to generate
-          90 days of history.
-        </p>
-      </Notice>
-    );
-  }
-
-  const range = lastNDays(7);
-  const prior = precedingWindow(range);
-  const { current, previous } = await getKpiComparison({
-    companyId: company.id,
-    from: range.from,
-    to: range.to,
+  const series = await getKpiSeries({
+    companyId: view.company.id,
+    from: view.range.from,
+    to: view.range.to,
+    zoneId: view.zoneId,
+    bucket: meta.bucket,
+    timeZone: view.company.timezone,
   });
 
-  const formatDate = (date: Date) =>
-    new Intl.DateTimeFormat('en-US', {
-      dateStyle: 'medium',
-      timeZone: company.timezone,
-    }).format(date);
+  const tickFormat = new Intl.DateTimeFormat('en-US', {
+    timeZone: view.company.timezone,
+    ...(meta.bucket === 'hour'
+      ? { hour: 'numeric', hour12: true }
+      : { month: 'short', day: 'numeric' }),
+  });
+
+  const fullFormat = new Intl.DateTimeFormat('en-US', {
+    timeZone: view.company.timezone,
+    ...(meta.bucket === 'hour'
+      ? { weekday: 'short', hour: 'numeric', hour12: true }
+      : { weekday: 'short', month: 'short', day: 'numeric' }),
+  });
+
+  const data: TrendPoint[] = series.map((point) => ({
+    label: tickFormat.format(point.bucketStart),
+    fullLabel: fullFormat.format(point.bucketStart),
+    orders: point.ordersCount,
+    onTimePercent: point.onTimeRate === null ? null : point.onTimeRate * 100,
+  }));
+
+  return <TrendChart data={data} />;
+}
+
+async function AlertsSection({ view }: { view: ViewContext }) {
+  const alerts = await generateAlerts({
+    companyId: view.company.id,
+    timeZone: view.company.timezone,
+    zoneCode: view.zoneCode === ALL_ZONES ? null : view.zoneCode,
+  });
+
+  return <AlertsPanel alerts={alerts} timeZone={view.company.timezone} />;
+}
+
+async function ZoneTableSection({ view }: { view: ViewContext }) {
+  const zones = await getZonePerformance(view.company.id, view.range);
+  return <ZoneTable zones={zones} currency={view.company.currency} />;
+}
+
+async function MapSection({ view }: { view: ViewContext }) {
+  const [zones, drivers] = await Promise.all([
+    getZonePerformance(view.company.id, view.range),
+    getDriverPositions(view.company.id),
+  ]);
 
   return (
-    <section>
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold">{company.name}</h2>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          Last 7 days &middot; {formatDate(range.from)} to {formatDate(range.to)}
-          <span className="block">
-            Compared with {formatDate(prior.from)} to {formatDate(prior.to)}
-          </span>
-        </p>
-      </div>
-
-      <dl className="divide-y divide-neutral-200 border-y border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
-        {KPI_KEYS.map((key) => {
-          const meta = KPI_META[key];
-          const change = percentChange(current[key], previous[key]);
-          const improved =
-            change === null || change === 0 ? null : meta.higherIsBetter === change > 0;
-
-          return (
-            <div key={key} className="flex items-baseline justify-between gap-4 py-3">
-              <dt className="text-sm text-neutral-600 dark:text-neutral-400">{meta.label}</dt>
-              <dd className="flex items-baseline gap-3">
-                <span className="font-mono text-base font-medium tabular-nums">
-                  {formatKpi(current[key], meta.format, { currency: company.currency })}
-                </span>
-                <span
-                  className={[
-                    'w-16 text-right font-mono text-xs tabular-nums',
-                    improved === null
-                      ? 'text-neutral-500'
-                      : improved
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-red-600 dark:text-red-400',
-                  ].join(' ')}
-                >
-                  {formatDelta(change)}
-                </span>
-              </dd>
-            </div>
-          );
-        })}
-      </dl>
-
-      <p className="mt-6 text-xs text-neutral-500">
-        Every figure is read from Postgres at request time. This page exists only to prove the
-        pipeline works end to end.
-      </p>
-    </section>
+    <ZoneMap
+      zones={zones.map((zone) => ({
+        code: zone.code,
+        name: zone.name,
+        polygon: zone.polygon,
+        onTimeRate: zone.onTimeRate,
+        ordersCount: zone.ordersCount,
+      }))}
+      drivers={drivers.map((driver) => ({
+        driverId: driver.driverId,
+        fullName: driver.fullName,
+        lat: driver.lat,
+        lng: driver.lng,
+      }))}
+      focusZoneCode={view.zoneCode === ALL_ZONES ? null : view.zoneCode}
+    />
   );
 }

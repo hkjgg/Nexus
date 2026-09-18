@@ -74,6 +74,9 @@ import type {
  */
 export const COMPANY_UTC_OFFSET_HOURS = 3;
 
+/** Company-local hour at which an operating day's costs are posted. */
+const DAY_CLOSE_HOUR = 22;
+
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
@@ -679,10 +682,22 @@ export function generateDataset(options: GenerateOptions = {}): GeneratedDataset
       }
     }
 
-    // --- vehicle costs ------------------------------------------------------
-    const endOfDayMs = Math.min(dayStartUtc + 22 * HOUR_MS, nowMs);
+    // --- vehicle and company costs ------------------------------------------
+    // Fuel, standing costs, maintenance and overhead are posted once, when the
+    // operating day closes. Today's have not been posted yet, so they are not
+    // booked at all rather than being dropped in at the current instant.
+    //
+    // This is not a cosmetic choice. A rolling window of exactly N days
+    // contains exactly N instances of a cost that recurs at a fixed time each
+    // day, which is what makes week-over-week comparisons trustworthy. Moving
+    // today's posting to "now" would put an extra partial lump inside the
+    // recent window and none in the window before it, showing up as a cost
+    // increase that never happened.
+    const endOfDayMs = dayStartUtc + DAY_CLOSE_HOUR * HOUR_MS;
+    const dayHasClosed = endOfDayMs <= nowMs;
 
     for (const vehicle of vehicles) {
+      if (!dayHasClosed) break;
       const km = kmPerVehicle.get(vehicle.id) ?? 0;
 
       if (km > 0) {
@@ -719,7 +734,7 @@ export function generateDataset(options: GenerateOptions = {}): GeneratedDataset
     }
 
     // Maintenance is billed weekly, staggered so it does not all land at once.
-    for (let v = 0; v < vehicles.length; v += 1) {
+    for (let v = 0; v < vehicles.length && dayHasClosed; v += 1) {
       const vehicle = vehicles[v]!;
       if (daysAgo % 7 !== v % 7) continue;
       const spec = VEHICLE_SPECS[vehicle.type];
@@ -736,17 +751,19 @@ export function generateDataset(options: GenerateOptions = {}): GeneratedDataset
       });
     }
 
-    expenses.push({
-      id: rng.uuid(),
-      company_id: company.id,
-      category: 'overhead',
-      vehicle_id: null,
-      driver_id: null,
-      amount: money(rng.float(DAILY_OVERHEAD[0], DAILY_OVERHEAD[1])),
-      liters: null,
-      occurred_at: iso(endOfDayMs),
-      created_at: iso(endOfDayMs),
-    });
+    if (dayHasClosed) {
+      expenses.push({
+        id: rng.uuid(),
+        company_id: company.id,
+        category: 'overhead',
+        vehicle_id: null,
+        driver_id: null,
+        amount: money(rng.float(DAILY_OVERHEAD[0], DAILY_OVERHEAD[1])),
+        liters: null,
+        occurred_at: iso(endOfDayMs),
+        created_at: iso(endOfDayMs),
+      });
+    }
   }
 
   // --- live driver positions -------------------------------------------------

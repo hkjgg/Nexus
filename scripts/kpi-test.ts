@@ -1,5 +1,5 @@
 /**
- * Prints all ten KPIs for the last 7 days against the 7 days before that.
+ * Prints every headline KPI for the last 7 days against the 7 days before that.
  *
  *   pnpm kpi:test              company-wide
  *   pnpm kpi:test --by-zone    plus a per-zone breakdown

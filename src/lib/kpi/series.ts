@@ -23,21 +23,41 @@ export function bucketForRange(from: Date, to: Date): TimeBucket {
 }
 
 export type SeriesPoint = {
-  /** Start of the bucket, in the company's timezone. */
+  /**
+   * Start of the bucket as the company's own wall clock reads it, carried as
+   * an instant pinned to UTC. Format it with `timeZone: 'UTC'` to read back
+   * exactly the local time the database cut; converting it to any other zone
+   * would shift it twice.
+   */
   bucketStart: Date;
   ordersCount: number;
   deliveredCount: number;
   /** Null when nothing in the bucket carried a promised time. */
   onTimeRate: number | null;
   revenue: number;
+  avgDeliveryMinutes: number | null;
+  /**
+   * Cost, profit and utilisation are null on hourly buckets. Expenses are
+   * booked once a day and shifts are recorded per day, so splitting either
+   * across hours would invent a shape the data does not have.
+   */
+  totalCost: number | null;
+  profit: number | null;
+  costPerDelivery: number | null;
+  fleetUtilization: number | null;
 };
 
 type SeriesRow = {
-  bucket_start: Date;
+  bucket_start: string;
   orders_count: string;
   delivered_count: string;
   on_time_rate: string | null;
   revenue: string;
+  avg_delivery_minutes: string | null;
+  total_cost: string | null;
+  profit: string | null;
+  cost_per_delivery: string | null;
+  fleet_utilization: string | null;
 };
 
 export type SeriesQuery = KpiQuery & {
@@ -47,44 +67,133 @@ export type SeriesQuery = KpiQuery & {
 };
 
 /**
- * Orders, deliveries, on-time rate and revenue per bucket across the range.
+ * Every headline metric, per bucket, across the range.
  *
  * Buckets with no orders come back as zero rows rather than gaps, so a quiet
  * night draws a line at the floor instead of a hole in the chart.
+ *
+ * Zone scoping follows `kpi_summary`: orders and shifts filter directly,
+ * while expenses - which belong to a vehicle or to the company, never to a
+ * zone - are allocated pro-rata by that zone's share of the bucket's
+ * deliveries. The two layers therefore always agree.
  */
 export async function getTimeSeries(params: SeriesQuery): Promise<SeriesPoint[]> {
   const rows = await query<SeriesRow>(
     `
+    with buckets as (
+      select generate_series(
+               date_trunc($4, ($2::timestamptz at time zone $6)),
+               date_trunc($4, ($3::timestamptz at time zone $6) - interval '1 microsecond'),
+               $5::interval
+             ) as bucket
+    ),
+    scoped_orders as (
+      select date_trunc($4, (o.created_at at time zone $6)) as bucket,
+             o.status, o.promised_at, o.delivered_at, o.picked_up_at, o.delivery_fee
+        from orders o
+       where o.company_id = $1::uuid
+         and o.created_at >= $2::timestamptz
+         and o.created_at <  $3::timestamptz
+         and ($7::uuid is null or o.zone_id = $7::uuid)
+    ),
+    order_stats as (
+      select
+        bucket,
+        count(*)::bigint                                       as orders_count,
+        count(*) filter (where status = 'delivered')::bigint   as delivered_count,
+        count(*) filter (
+          where status = 'delivered' and promised_at is not null
+        )::bigint                                              as delivered_with_promise,
+        count(*) filter (
+          where status = 'delivered' and promised_at is not null and delivered_at <= promised_at
+        )::bigint                                              as on_time_count,
+        coalesce(sum(delivery_fee) filter (where status = 'delivered'), 0)::numeric as revenue,
+        avg(extract(epoch from (delivered_at - picked_up_at)) / 60.0) filter (
+          where status = 'delivered' and picked_up_at is not null
+        )::numeric                                             as avg_delivery_minutes
+      from scoped_orders
+      group by bucket
+    ),
+    -- Company-wide deliveries per bucket, the denominator of the cost share.
+    company_stats as (
+      select date_trunc($4, (o.created_at at time zone $6)) as bucket,
+             count(*) filter (where o.status = 'delivered')::numeric as delivered_count
+        from orders o
+       where o.company_id = $1::uuid
+         and o.created_at >= $2::timestamptz
+         and o.created_at <  $3::timestamptz
+       group by 1
+    ),
+    -- Daily buckets only: expenses are booked once a day, so an hourly split
+    -- would put a whole day's overhead into one hour.
+    expense_stats as (
+      select date_trunc($4, (e.occurred_at at time zone $6)) as bucket,
+             sum(e.amount)::numeric as total_cost
+        from expenses e
+       where $4 = 'day'
+         and e.company_id = $1::uuid
+         and e.occurred_at >= $2::timestamptz
+         and e.occurred_at <  $3::timestamptz
+       group by 1
+    ),
+    -- Daily buckets only: a shift is recorded against a date, not a moment.
+    shift_stats as (
+      select date_trunc($4, s.date::timestamp) as bucket,
+             sum(s.active_minutes)::numeric    as active_minutes,
+             sum(s.idle_minutes)::numeric      as idle_minutes
+        from driver_shifts s
+        join drivers d on d.id = s.driver_id
+       where $4 = 'day'
+         and s.company_id = $1::uuid
+         and s.date >= ($2::timestamptz at time zone $6)::date
+         and s.date <  ($3::timestamptz at time zone $6)::date
+         and ($7::uuid is null or d.home_zone_id = $7::uuid)
+       group by 1
+    ),
+    scoped as (
+      select
+        b.bucket,
+        coalesce(os.orders_count, 0)     as orders_count,
+        coalesce(os.delivered_count, 0)  as delivered_count,
+        round(
+          os.on_time_count::numeric / nullif(os.delivered_with_promise, 0), 4
+        )                                as on_time_rate,
+        coalesce(os.revenue, 0)          as revenue,
+        round(os.avg_delivery_minutes, 2) as avg_delivery_minutes,
+        round(
+          es.total_cost * case
+            when $7::uuid is null then 1.0
+            when coalesce(cs.delivered_count, 0) = 0 then 0
+            else coalesce(os.delivered_count, 0)::numeric / cs.delivered_count
+          end,
+          2
+        )                                as total_cost,
+        round(
+          ss.active_minutes / nullif(ss.active_minutes + ss.idle_minutes, 0), 4
+        )                                as fleet_utilization
+      from buckets b
+      left join order_stats os   on os.bucket = b.bucket
+      left join company_stats cs on cs.bucket = b.bucket
+      left join expense_stats es on es.bucket = b.bucket
+      left join shift_stats ss   on ss.bucket = b.bucket
+    )
     select
-      b.bucket                                                       as bucket_start,
-      count(o.id)::bigint                                            as orders_count,
-      count(o.id) filter (where o.status = 'delivered')::bigint      as delivered_count,
-      round(
-        count(o.id) filter (
-          where o.status = 'delivered'
-            and o.promised_at is not null
-            and o.delivered_at <= o.promised_at
-        )::numeric
-        / nullif(
-            count(o.id) filter (where o.status = 'delivered' and o.promised_at is not null),
-            0
-          ),
-        4
-      )                                                              as on_time_rate,
-      coalesce(sum(o.delivery_fee) filter (where o.status = 'delivered'), 0)::numeric as revenue
-    from generate_series(
-           date_trunc($4, ($2::timestamptz at time zone $6)),
-           date_trunc($4, ($3::timestamptz at time zone $6) - interval '1 microsecond'),
-           $5::interval
-         ) as b(bucket)
-    left join orders o
-      on  o.company_id = $1::uuid
-      and o.created_at >= $2::timestamptz
-      and o.created_at <  $3::timestamptz
-      and ($7::uuid is null or o.zone_id = $7::uuid)
-      and date_trunc($4, (o.created_at at time zone $6)) = b.bucket
-    group by b.bucket
-    order by b.bucket
+      -- The bucket is a naive local timestamp. Rendered as text with an
+      -- explicit Z, it reaches JavaScript as the same wall clock whatever
+      -- timezone the Node process happens to run in; parsing it as a bare
+      -- timestamp would silently shift it by the server's own offset.
+      to_char(bucket, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')         as bucket_start,
+      orders_count::bigint                                  as orders_count,
+      delivered_count::bigint                               as delivered_count,
+      on_time_rate,
+      revenue,
+      avg_delivery_minutes,
+      total_cost,
+      round(revenue - total_cost, 2)                        as profit,
+      round(total_cost / nullif(delivered_count, 0), 2)     as cost_per_delivery,
+      fleet_utilization
+    from scoped
+    order by bucket
     `,
     [
       params.companyId,
@@ -97,12 +206,20 @@ export async function getTimeSeries(params: SeriesQuery): Promise<SeriesPoint[]>
     ],
   );
 
+  const toNullable = (value: string | null): number | null =>
+    value === null ? null : Number(value);
+
   return rows.map((row) => ({
-    bucketStart: row.bucket_start,
+    bucketStart: new Date(row.bucket_start),
     ordersCount: Number(row.orders_count),
     deliveredCount: Number(row.delivered_count),
-    onTimeRate: row.on_time_rate === null ? null : Number(row.on_time_rate),
+    onTimeRate: toNullable(row.on_time_rate),
     revenue: Number(row.revenue),
+    avgDeliveryMinutes: toNullable(row.avg_delivery_minutes),
+    totalCost: toNullable(row.total_cost),
+    profit: toNullable(row.profit),
+    costPerDelivery: toNullable(row.cost_per_delivery),
+    fleetUtilization: toNullable(row.fleet_utilization),
   }));
 }
 

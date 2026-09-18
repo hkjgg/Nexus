@@ -10,9 +10,9 @@ milestones — an AI analyst that explains *why* a number moved.
 This repository is built in public as a portfolio project, with a live demo
 running on seeded but realistic data.
 
-> **Status: Week 1 — foundations.** The schema, the demo data engine and the
-> KPI layer are complete and verified. The UI is a deliberate placeholder that
-> proves the pipeline works end to end; the real control tower comes next.
+> **Status: Week 1 — foundations and the Command Center.** The schema, the
+> demo data engine, the KPI layer, the design system and the first screen of
+> the control tower are complete and verified. Seven more sections to build.
 
 ---
 
@@ -21,17 +21,21 @@ running on seeded but realistic data.
 | Area | State |
 | --- | --- |
 | Postgres schema, indexes, Realtime, RLS | Done |
-| Demo data engine (90 days, ~338k rows) | Done |
-| Deterministic KPI layer (10 metrics) | Done |
-| Placeholder home page reading live KPIs | Done |
-| Control tower UI, maps, charts, AI analyst | Not started |
+| Demo data engine (90 days, ~340k rows) | Done |
+| Deterministic KPI layer, time series, per-zone breakdowns | Done |
+| Design system: tokens and eight components | Done |
+| App shell: sidebar, date range, zone filter, live clock | Done |
+| Command Center: KPIs, chart, zone table, alerts, map | Done |
+| Rule-based alert engine | Done |
+| Live Map, Orders, Drivers, Fleet, Analytics, Simulator, AI Assistant | Not started |
 
 ## Stack
 
 - **Next.js 15** (App Router) + **TypeScript** in strict mode
-- **Tailwind CSS v4** with **shadcn/ui** conventions
+- **Tailwind CSS v4**, with the design tokens declared in `src/app/globals.css`
 - **Supabase** (Postgres + Realtime) via `@supabase/supabase-js`
-- **Recharts**, **MapLibre GL**, **Framer Motion** (installed now, used later)
+- **Recharts** for charts, **MapLibre GL** on CARTO's key-free dark basemap,
+  **Framer Motion** for one purposeful entrance
 - **pnpm**, deployed to **Vercel**
 
 ## Getting started
@@ -87,8 +91,18 @@ and a pass/fail line for every demo story and baseline target.
 pnpm dev
 ```
 
-The home page lists the ten headline KPIs for the last seven days, read live
-from Postgres.
+The Command Center opens on the last seven days: eight KPI tiles with their
+movement against the previous period, orders and on-time rate over the range,
+the per-zone table, the alerts the rules found, and the service map. The date
+range and zone filter live in the URL, so any view is shareable.
+
+### Setting up a hosted database from CI
+
+The **Database setup** workflow (`.github/workflows/db-setup.yml`) runs the
+same two commands against the `DATABASE_URL` repository secret. Trigger it
+from the Actions tab; it takes a `reset` box for a destructive reseed and a
+`skip_seed` box for migrations only. Migrations are tracked in
+`schema_migrations` and each file is idempotent, so re-running is safe.
 
 ### Without a database
 
@@ -111,21 +125,25 @@ pnpm tsx scripts/seed/dry-run.ts
 | `pnpm db:migrate` | Apply pending SQL migrations |
 | `pnpm seed` | Generate and insert the demo dataset |
 | `pnpm seed:reset` | Truncate everything, then reseed |
-| `pnpm kpi:test` | Print all ten KPIs, last 7 days vs prior 7 |
+| `pnpm kpi:test` | Print every headline KPI, last 7 days vs prior 7 |
 | `pnpm kpi:test --by-zone` | The same, broken down per zone |
 
 ## Project layout
 
 ```
 src/
-  app/                 Next.js App Router pages
+  app/
+    (app)/             the shell and every section inside it
   components/
-    ui/                shadcn/ui primitives
-    nexus/             product components (control tower, charts, map)
+    nexus/             the design system: eight primitives, nothing domain-aware
+    shell/             sidebar, top bar, filters, live clock
+    command-center/    the panels of the first screen
   lib/
+    alerts/            the rule engine: pure functions over measurements
     db/                Postgres pool, Supabase clients, domain types
-    kpi/               deterministic KPI queries and formatting
+    kpi/               deterministic KPI queries, series, and formatting
     sim/               the demo data engine
+    filters.ts         date range and zone, parsed from the URL
 scripts/
   migrate.ts           migration runner
   kpi-test.ts          KPI comparison report
@@ -210,12 +228,35 @@ Both `pnpm seed` and the dry run verify all four, plus the baseline
 statistical targets, and print a pass/fail line for each. A story that stops
 holding fails loudly at seed time rather than quietly at demo time.
 
+## Alerts
+
+Alerts are generated on each request by four rules in `src/lib/alerts`, not
+stored and not written by hand, so they can never contradict the numbers
+beside them or linger after the problem is gone.
+
+No rule names a zone, a vehicle or a driver. Each compares an entity with its
+own peers — a zone against the median zone, a van against the other vans, a
+driver against the median driver *in the same zone* — so the findings survive
+a reseed. Every threshold is a ratio against a peer median and they all live
+in one exported constant, `ALERT_THRESHOLDS`.
+
+Against the seeded data the rules find exactly the four planted stories, and
+nothing else.
+
 ## Design rules
 
 - **No hard-coded numbers in the UI.** Everything reads from the database.
   Labels, formats and currency come from metadata and the company record.
 - **KPIs are deterministic.** Arithmetic lives in SQL; TypeScript maps and
   formats.
+- **One accent, three status colours.** Colour that is not the accent means
+  something; a status colour never doubles as a chart series, and never
+  carries meaning without an icon or a label beside it.
+- **No dual-axis charts.** A count and a rate get two stacked panels sharing
+  one x-axis, because aligning two y-scales invents a correlation the data
+  does not contain.
+- **Motion is purposeful.** One short staggered entrance, and it collapses to
+  its end state under `prefers-reduced-motion`.
 - **Typed throughout.** Strict TypeScript, with domain types mirroring the
   schema in `src/lib/db/types.ts`.
 

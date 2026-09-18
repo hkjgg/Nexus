@@ -53,10 +53,11 @@ export type KpiComparison = {
   previous: KpiSummary;
 };
 
-/** The ten headline KPIs, in the order the dashboard presents them. */
+/** The headline KPIs, in the order the dashboard presents them. */
 export const KPI_KEYS = [
   'revenue',
   'ordersCount',
+  'deliveredCount',
   'successRate',
   'onTimeRate',
   'avgDeliveryMinutes',
@@ -78,6 +79,7 @@ export const KPI_META: Record<
 > = {
   revenue: { label: 'Revenue', format: 'currency', higherIsBetter: true },
   ordersCount: { label: 'Orders', format: 'integer', higherIsBetter: true },
+  deliveredCount: { label: 'Delivered', format: 'integer', higherIsBetter: true },
   successRate: { label: 'Delivery success rate', format: 'percent', higherIsBetter: true },
   onTimeRate: { label: 'On-time rate', format: 'percent', higherIsBetter: true },
   avgDeliveryMinutes: { label: 'Avg delivery time', format: 'minutes', higherIsBetter: false },

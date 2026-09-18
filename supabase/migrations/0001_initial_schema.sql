@@ -12,6 +12,23 @@
 create extension if not exists "pgcrypto";
 
 -- ---------------------------------------------------------------------------
+-- Roles
+--
+-- Supabase ships the `anon` and `authenticated` roles; a plain Postgres (local
+-- development, CI) does not, and the policies and grants below reference them
+-- by name. Creating them when absent keeps one migration set working against
+-- both, and is a no-op on Supabase.
+-- ---------------------------------------------------------------------------
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname = 'anon') then
+    create role anon nologin noinherit;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then
+    create role authenticated nologin noinherit;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
 -- Enums
 -- ---------------------------------------------------------------------------
 do $$ begin

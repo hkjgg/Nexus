@@ -1,26 +1,142 @@
 @import 'tailwindcss';
 
+/* ===========================================================================
+   NEXUS design tokens
+   ---------------------------------------------------------------------------
+   An operations control tower, not a gaming dashboard: dark-first, calm, and
+   dense enough that a dispatcher can read the whole state of the business
+   without scrolling.
+
+   Four rules hold the look together:
+     1. Surfaces separate by luminance, never by a coloured glow. Four layers
+        only - canvas, surface, raised, inset.
+     2. Exactly one accent. It marks the active thing and nothing else, so
+        when it appears the eye knows where to go.
+     3. Colour that is not the accent is semantic: good / warn / critical.
+        A status colour never doubles as a chart series, and never carries
+        meaning on its own - it always ships beside an icon or a label.
+     4. Numbers are mono and tabular so columns line up down the page.
+
+   Tokens are declared once here and consumed as Tailwind utilities
+   (`bg-surface`, `text-ink-muted`, `border-line`) or as raw CSS variables
+   (`var(--color-accent)`) where a chart or a map needs a literal colour.
+   =========================================================================== */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+@theme {
+  /* --- Background layers ------------------------------------------------ */
+  /* The page itself. Everything else sits on top of it. */
+  --color-canvas: #0b0e13;
+  /* Cards, panels, the sidebar. */
+  --color-surface: #11151b;
+  /* Hover and elevated states; one step up from surface. */
+  --color-raised: #171c24;
+  /* Wells: table headers, code, anything recessed below the surface. */
+  --color-inset: #0d1116;
+
+  /* --- Borders ---------------------------------------------------------- */
+  /* Hairlines between rows and around cards. */
+  --color-line: #1f2630;
+  /* Emphasised edges: focus rings, active tabs, selected rows. */
+  --color-line-strong: #2b3340;
+
+  /* --- Text levels ------------------------------------------------------ */
+  /* Values, headings. 15:1 on surface. */
+  --color-ink: #e6ebf2;
+  /* Labels and prose. 7:1 on surface. */
+  --color-ink-muted: #97a3b4;
+  /* Axis ticks, units, timestamps. 3.6:1 - large or non-essential text only. */
+  --color-ink-faint: #64707f;
+
+  /* --- Accent ----------------------------------------------------------- */
+  /* One accent, used for selection and the primary data series. 5:1. */
+  --color-accent: #3987e5;
+  --color-accent-strong: #6da7ec;
+  /* A wash for selected backgrounds; carries no meaning without the accent. */
+  --color-accent-wash: #16263c;
+
+  /* --- Semantic status -------------------------------------------------- */
+  /* Reserved. Never reused as a chart series colour. */
+  --color-good: #0ca30c;
+  --color-good-wash: #0d2413;
+  --color-warn: #fab219;
+  --color-warn-wash: #2c2210;
+  --color-critical: #d03b3b;
+  --color-critical-wash: #2e1518;
+
+  /* --- Chart series ----------------------------------------------------- */
+  /* Validated as a set against the surface above: all-pairs CVD ΔE 9.4,
+     normal-vision ΔE 20.9, every slot ≥3:1. Assigned in fixed order. */
+  --color-series-1: #3987e5;
+  --color-series-2: #199e70;
+  --color-series-3: #d95926;
+
+  /* --- Typography ------------------------------------------------------- */
+  --font-sans:
+    var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* --- Motion ----------------------------------------------------------- */
+  /* Purposeful only: state changes and entrances, never decoration. */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    /* The control tower runs on one dense scale. */
+    font-size: 15px;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Every figure in the product is mono and tabular, so digits keep their
+     column whether they are in a tile, an axis or a table cell. */
+  .font-mono,
+  code,
+  kbd,
+  samp {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* Thin, recessive scrollbars - a dense table should not be framed by
+     chrome that competes with the data. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+@layer utilities {
+  /* Sits under sparklines and chart fills so an area never reads as a slab. */
+  .bg-grid-faint {
+    background-image: linear-gradient(var(--color-line) 1px, transparent 1px);
+    background-size: 100% 28px;
+  }
+}
+
+/* People who ask for less motion get none: every animation collapses to its
+   end state rather than running faster. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

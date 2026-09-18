@@ -53,10 +53,11 @@ export type KpiComparison = {
   previous: KpiSummary;
 };
 
-/** The ten headline KPIs, in the order the dashboard presents them. */
+/** Every metric the KPI layer exposes for presentation. */
 export const KPI_KEYS = [
   'revenue',
   'ordersCount',
+  'deliveredCount',
   'successRate',
   'onTimeRate',
   'avgDeliveryMinutes',
@@ -78,6 +79,7 @@ export const KPI_META: Record<
 > = {
   revenue: { label: 'Revenue', format: 'currency', higherIsBetter: true },
   ordersCount: { label: 'Orders', format: 'integer', higherIsBetter: true },
+  deliveredCount: { label: 'Delivered', format: 'integer', higherIsBetter: true },
   successRate: { label: 'Delivery success rate', format: 'percent', higherIsBetter: true },
   onTimeRate: { label: 'On-time rate', format: 'percent', higherIsBetter: true },
   avgDeliveryMinutes: { label: 'Avg delivery time', format: 'minutes', higherIsBetter: false },
@@ -87,3 +89,20 @@ export const KPI_META: Record<
   lateRate: { label: 'Delay rate', format: 'percent', higherIsBetter: false },
   cancellationRate: { label: 'Cancellation rate', format: 'percent', higherIsBetter: false },
 };
+
+/**
+ * The eight tiles across the top of the Command Center, in reading order.
+ *
+ * Volume first, then quality, then money - the order an operations lead asks
+ * the questions in.
+ */
+export const COMMAND_CENTER_KPIS: readonly KpiKey[] = [
+  'revenue',
+  'ordersCount',
+  'deliveredCount',
+  'onTimeRate',
+  'avgDeliveryMinutes',
+  'fleetUtilization',
+  'costPerDelivery',
+  'profit',
+];

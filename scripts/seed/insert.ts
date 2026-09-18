@@ -46,10 +46,7 @@ export async function insertRows<T extends Record<string, unknown>>(
       tuples.push(`(${placeholders.join(', ')})`);
     }
 
-    await client.query(
-      `insert into ${table} (${columnList}) values ${tuples.join(', ')}`,
-      values,
-    );
+    await client.query(`insert into ${table} (${columnList}) values ${tuples.join(', ')}`, values);
 
     inserted += chunk.length;
     options.onProgress?.(inserted, rows.length);

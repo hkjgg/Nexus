@@ -21,12 +21,7 @@ export type OrderStatus =
 
 export type OrderChannel = 'website' | 'app' | 'pos' | 'marketplace' | 'phone';
 
-export type ExpenseCategory =
-  | 'fuel'
-  | 'maintenance'
-  | 'driver_wage'
-  | 'vehicle_fixed'
-  | 'overhead';
+export type ExpenseCategory = 'fuel' | 'maintenance' | 'driver_wage' | 'vehicle_fixed' | 'overhead';
 
 export type AlertType = 'operational' | 'capacity' | 'financial' | 'fleet' | 'anomaly';
 export type AlertSeverity = 'info' | 'warning' | 'critical';

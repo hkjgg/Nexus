@@ -11,7 +11,7 @@ import './env';
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { closePool, getPool, query, withTransaction } from '@/lib/db/pg';
+import { closePool, query, withTransaction } from '@/lib/db/pg';
 import { hasDatabaseUrl } from '@/lib/db/env';
 
 const MIGRATIONS_DIR = resolve(process.cwd(), 'supabase/migrations');

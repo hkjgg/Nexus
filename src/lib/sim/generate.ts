@@ -310,9 +310,7 @@ function lateRateFor(zoneCode: string, daysAgo: number): number {
     if (daysAgo <= lastIndex) {
       const progress = (lastIndex - daysAgo) / lastIndex;
       // Delays climb alongside demand: capacity is not keeping up.
-      return (
-        OUTCOME_RATES.late + (STORY_ZONE_SURGE.peakLateRate - OUTCOME_RATES.late) * progress
-      );
+      return OUTCOME_RATES.late + (STORY_ZONE_SURGE.peakLateRate - OUTCOME_RATES.late) * progress;
     }
   }
 
@@ -355,14 +353,6 @@ export function generateDataset(options: GenerateOptions = {}): GeneratedDataset
   const vehicles = buildVehicles(rng, company.id, companyCreatedAt);
   const driverPlans = buildDrivers(rng, company.id, companyCreatedAt, zones, vehicles);
   const drivers = driverPlans.map((p) => p.driver);
-
-  const vehicleById = new Map(vehicles.map((v) => [v.id, v]));
-  const driversByZone = new Map<number, DriverPlan[]>();
-  driverPlans.forEach((plan) => {
-    const list = driversByZone.get(plan.zoneIndex) ?? [];
-    list.push(plan);
-    driversByZone.set(plan.zoneIndex, list);
-  });
 
   const orders: Order[] = [];
   const orderEvents: OrderEvent[] = [];
@@ -606,9 +596,15 @@ export function generateDataset(options: GenerateOptions = {}): GeneratedDataset
           });
         }
         if (order.status === 'cancelled' && cancelledAt !== null) {
-          pushEvent('cancelled', order.assigned_at ? 'assigned' : 'pending', 'cancelled', cancelledAt, {
-            reason: cancelReason,
-          });
+          pushEvent(
+            'cancelled',
+            order.assigned_at ? 'assigned' : 'pending',
+            'cancelled',
+            cancelledAt,
+            {
+              reason: cancelReason,
+            },
+          );
         }
         if (order.status === 'failed' && cancelledAt !== null) {
           pushEvent('failed', 'in_transit', 'failed', cancelledAt, { reason: cancelReason });
@@ -770,8 +766,7 @@ export function generateDataset(options: GenerateOptions = {}): GeneratedDataset
   // Drivers on an active shift right now get a plausible current location.
   const nowLocalHour = new Date(nowMs + COMPANY_UTC_OFFSET_HOURS * HOUR_MS).getUTCHours();
   for (const plan of driverPlans) {
-    const onShift =
-      nowLocalHour >= plan.shiftStartHour && nowLocalHour < plan.shiftStartHour + 9;
+    const onShift = nowLocalHour >= plan.shiftStartHour && nowLocalHour < plan.shiftStartHour + 9;
     if (!onShift) continue;
     const zone = zones[plan.zoneIndex]!;
     const spec = ZONE_SPECS[plan.zoneIndex]!;
@@ -844,7 +839,10 @@ function buildAlerts(
       entity_type: 'vehicle',
       entity_id: thirstyVan.id,
       metric: 'liters_per_km',
-      value: round2((1 / thirstyVan.fuel_efficiency_km_per_l) * (1 + STORY_THIRSTY_VAN.excessFuelRate) * 1000) / 1000,
+      value:
+        round2(
+          (1 / thirstyVan.fuel_efficiency_km_per_l) * (1 + STORY_THIRSTY_VAN.excessFuelRate) * 1000,
+        ) / 1000,
       threshold: round2((1 / thirstyVan.fuel_efficiency_km_per_l) * 1000) / 1000,
       resolved_at: null,
       created_at: iso(nowMs - 26 * HOUR_MS),
@@ -931,6 +929,7 @@ export function companyDaysAgo(nowMs: number, ms: number): number {
 
 /** Day of week (0 = Sunday) of the company-local day `daysAgo` days back. */
 export function localDayOfWeek(nowMs: number, daysAgo: number): number {
-  const dayStartUtc = (localDayIndex(nowMs) - daysAgo) * DAY_MS - COMPANY_UTC_OFFSET_HOURS * HOUR_MS;
+  const dayStartUtc =
+    (localDayIndex(nowMs) - daysAgo) * DAY_MS - COMPANY_UTC_OFFSET_HOURS * HOUR_MS;
   return new Date(dayStartUtc + COMPANY_UTC_OFFSET_HOURS * HOUR_MS).getUTCDay();
 }

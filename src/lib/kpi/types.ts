@@ -72,7 +72,10 @@ export type KpiKey = (typeof KPI_KEYS)[number];
 export type KpiFormat = 'currency' | 'integer' | 'percent' | 'minutes';
 
 /** Presentation metadata. Labels and units live here, never in a component. */
-export const KPI_META: Record<KpiKey, { label: string; format: KpiFormat; higherIsBetter: boolean }> = {
+export const KPI_META: Record<
+  KpiKey,
+  { label: string; format: KpiFormat; higherIsBetter: boolean }
+> = {
   revenue: { label: 'Revenue', format: 'currency', higherIsBetter: true },
   ordersCount: { label: 'Orders', format: 'integer', higherIsBetter: true },
   successRate: { label: 'Delivery success rate', format: 'percent', higherIsBetter: true },

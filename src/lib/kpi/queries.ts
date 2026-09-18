@@ -93,10 +93,7 @@ export async function getKpiComparison(params: KpiQuery): Promise<KpiComparison>
     to: params.from,
   };
 
-  const [current, prior] = await Promise.all([
-    getKpiSummary(params),
-    getKpiSummary(previous),
-  ]);
+  const [current, prior] = await Promise.all([getKpiSummary(params), getKpiSummary(previous)]);
 
   return { current, previous: prior };
 }

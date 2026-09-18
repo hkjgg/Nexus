@@ -10,7 +10,6 @@ import {
   DEADHEAD_FACTOR,
   OUTCOME_RATES,
   WEEKDAY_MULTIPLIER,
-  STORY_OVERLOADED_DRIVERS,
   STORY_RAIN_DAY,
   STORY_THIRSTY_VAN,
   STORY_ZONE_SURGE,
@@ -28,8 +27,6 @@ export type Check = {
   detail: string;
   pass: boolean;
 };
-
-const DAY_MS = 86_400_000;
 
 const pct = (value: number): string => `${(value * 100).toFixed(1)}%`;
 const num = (value: number, digits = 1): string =>
@@ -196,7 +193,10 @@ export function verifyStories(data: GeneratedDataset): Check[] {
   const thirsty = vans.find((v) => v.plate === STORY_THIRSTY_VAN.plate);
   if (thirsty) {
     const thirstyRate = litersPerKm(thirsty.id);
-    const peerRates = vans.filter((v) => v.id !== thirsty.id).map((v) => litersPerKm(v.id)).filter((r) => r > 0);
+    const peerRates = vans
+      .filter((v) => v.id !== thirsty.id)
+      .map((v) => litersPerKm(v.id))
+      .filter((r) => r > 0);
     const peerMedian = median(peerRates);
     const excess = peerMedian > 0 ? thirstyRate / peerMedian - 1 : 0;
 
@@ -220,7 +220,9 @@ export function verifyStories(data: GeneratedDataset): Check[] {
   if (targetDrivers.length > 0) {
     const targetIds = new Set(targetDrivers.map((d) => d.id));
     const medianOthers = median(
-      data.drivers.filter((d) => !targetIds.has(d.id)).map((d) => deliveriesByDriver.get(d.id) ?? 0),
+      data.drivers
+        .filter((d) => !targetIds.has(d.id))
+        .map((d) => deliveriesByDriver.get(d.id) ?? 0),
     );
     const targetCounts = targetDrivers.map((d) => deliveriesByDriver.get(d.id) ?? 0);
     const ratios = targetCounts.map((c) => (medianOthers > 0 ? c / medianOthers - 1 : 0));
@@ -304,7 +306,8 @@ export function verifyBaselines(data: GeneratedDataset): Check[] {
   const failed = terminal.filter((o) => o.status === 'failed').length;
   const delivered = terminal.filter((o) => o.status === 'delivered');
   const late = delivered.filter(
-    (o) => o.promised_at && o.delivered_at && Date.parse(o.delivered_at) > Date.parse(o.promised_at),
+    (o) =>
+      o.promised_at && o.delivered_at && Date.parse(o.delivered_at) > Date.parse(o.promised_at),
   ).length;
 
   const durations = delivered.map(deliveryMinutes).filter((m): m is number => m !== null);
@@ -312,9 +315,8 @@ export function verifyBaselines(data: GeneratedDataset): Check[] {
 
   const activeMinutes = data.driverShifts.reduce((s, x) => s + x.active_minutes, 0);
   const idleMinutes = data.driverShifts.reduce((s, x) => s + x.idle_minutes, 0);
-  const utilisation = activeMinutes + idleMinutes > 0
-    ? activeMinutes / (activeMinutes + idleMinutes)
-    : 0;
+  const utilisation =
+    activeMinutes + idleMinutes > 0 ? activeMinutes / (activeMinutes + idleMinutes) : 0;
 
   const days = new Set(data.orders.map((o) => o.created_at.slice(0, 10))).size;
 
@@ -327,12 +329,12 @@ export function verifyBaselines(data: GeneratedDataset): Check[] {
     {
       label: 'Baseline - cancellation rate',
       detail: `${pct(terminal.length ? cancelled / terminal.length : 0)}, target ~${pct(OUTCOME_RATES.cancelled)}`,
-      pass: Math.abs((cancelled / Math.max(1, terminal.length)) - OUTCOME_RATES.cancelled) < 0.015,
+      pass: Math.abs(cancelled / Math.max(1, terminal.length) - OUTCOME_RATES.cancelled) < 0.015,
     },
     {
       label: 'Baseline - failure rate',
       detail: `${pct(terminal.length ? failed / terminal.length : 0)}, target ~${pct(OUTCOME_RATES.failed)}`,
-      pass: Math.abs((failed / Math.max(1, terminal.length)) - OUTCOME_RATES.failed) < 0.01,
+      pass: Math.abs(failed / Math.max(1, terminal.length) - OUTCOME_RATES.failed) < 0.01,
     },
     {
       label: 'Baseline - late rate (normal conditions)',

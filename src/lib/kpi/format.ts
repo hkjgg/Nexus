@@ -12,11 +12,7 @@ export type FormatContext = {
   locale?: string;
 };
 
-export function formatKpi(
-  value: number | null,
-  format: KpiFormat,
-  context: FormatContext,
-): string {
+export function formatKpi(value: number | null, format: KpiFormat, context: FormatContext): string {
   if (value === null || Number.isNaN(value)) return '-';
   const locale = context.locale ?? 'en-US';
 

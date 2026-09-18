@@ -16,12 +16,7 @@ export function kmPerDegreeLng(latitude: number): number {
 }
 
 /** Great-circle-ish distance in kilometres between two points. */
-export function distanceKm(
-  aLat: number,
-  aLng: number,
-  bLat: number,
-  bLng: number,
-): number {
+export function distanceKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
   const midLat = (aLat + bLat) / 2;
   const dLat = (bLat - aLat) * KM_PER_DEGREE_LAT;
   const dLng = (bLng - aLng) * kmPerDegreeLng(midLat);

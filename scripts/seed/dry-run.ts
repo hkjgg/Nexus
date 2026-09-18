@@ -13,7 +13,9 @@ const startedAt = Date.now();
 const data = generateDataset();
 const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
 
-console.log(`Generated ${data.orders.length.toLocaleString('en-US')} orders in ${elapsed}s (dry run, nothing written).`);
+console.log(
+  `Generated ${data.orders.length.toLocaleString('en-US')} orders in ${elapsed}s (dry run, nothing written).`,
+);
 printCounts(data);
 const ok = printVerification(data);
 

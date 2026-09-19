@@ -1,26 +1,167 @@
 @import 'tailwindcss';
 
+/* ===========================================================================
+   NEXUS design tokens
+   ---------------------------------------------------------------------------
+   An operations control tower, not a dashboard toy: dark-first, low chroma,
+   and quiet enough that the data is the only thing with colour in it.
+
+   Every value below is a raw token. Components never reference a hex code or a
+   Tailwind palette colour (`bg-neutral-900`) directly - they use the semantic
+   utilities generated from the `@theme` block underneath, so re-theming is a
+   change in one file.
+
+   Layers, darkest to lightest:
+     base      the page behind everything
+     sunken    insets - table headers, code, chart wells
+     surface   cards, panels, the sidebar
+     raised    hover states and anything floating above a surface
+   =========================================================================== */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+
+  /* Background layers */
+  --nx-base: #0a0d12;
+  --nx-sunken: #070a0e;
+  --nx-surface: #10151d;
+  --nx-raised: #161d27;
+
+  /* Borders, weakest to strongest */
+  --nx-border-subtle: #181f29;
+  --nx-border: #232c38;
+  --nx-border-strong: #33404f;
+
+  /* Text levels */
+  --nx-text: #e4e9f0;
+  --nx-text-secondary: #a0adbf;
+  --nx-text-muted: #6d7b8e;
+  --nx-text-faint: #4a5566;
+
+  /* One accent, used for selection and focus and almost nothing else. */
+  --nx-accent: #4d9fd6;
+  --nx-accent-strong: #6fb6e6;
+  --nx-accent-surface: #12212e;
+
+  /* Semantic status. Desaturated on purpose: these read as state, not alarm. */
+  --nx-positive: #3fae7f;
+  --nx-positive-surface: #102019;
+  --nx-caution: #cc9a3d;
+  --nx-caution-surface: #211a0f;
+  --nx-critical: #d2635c;
+  --nx-critical-surface: #241312;
+  --nx-info: #5b91c4;
+  --nx-info-surface: #111c27;
+  --nx-neutral: #6d7b8e;
+  --nx-neutral-surface: #161c24;
+
+  /* Chart series, in the order a chart should reach for them.
+     This order is the colour-blindness safety mechanism and is not to be
+     rearranged: it clears the OKLCH lightness band for a dark surface, the
+     chroma floor, and CVD separation between adjacent slots under simulated
+     protanopia and deuteranopia. Changing a slot means re-validating the set,
+     not eyeballing a replacement. */
+  --nx-chart-1: #3f8fc9;
+  --nx-chart-2: #2f9d70;
+  --nx-chart-3: #8f6bc4;
+  --nx-chart-4: #bd8a2e;
+  --nx-chart-grid: #1d2530;
+
+  /* Radii and elevation */
+  --nx-radius: 0.5rem;
+  --nx-radius-sm: 0.3125rem;
+  --nx-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
 }
 
+/* Map the raw tokens onto Tailwind utilities: `bg-surface`, `text-muted`,
+   `border-subtle`, `text-positive` and so on. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-base: var(--nx-base);
+  --color-sunken: var(--nx-sunken);
+  --color-surface: var(--nx-surface);
+  --color-raised: var(--nx-raised);
+
+  --color-line-subtle: var(--nx-border-subtle);
+  --color-line: var(--nx-border);
+  --color-line-strong: var(--nx-border-strong);
+
+  --color-content: var(--nx-text);
+  --color-secondary: var(--nx-text-secondary);
+  --color-muted: var(--nx-text-muted);
+  --color-faint: var(--nx-text-faint);
+
+  --color-accent: var(--nx-accent);
+  --color-accent-strong: var(--nx-accent-strong);
+  --color-accent-surface: var(--nx-accent-surface);
+
+  --color-positive: var(--nx-positive);
+  --color-positive-surface: var(--nx-positive-surface);
+  --color-caution: var(--nx-caution);
+  --color-caution-surface: var(--nx-caution-surface);
+  --color-critical: var(--nx-critical);
+  --color-critical-surface: var(--nx-critical-surface);
+  --color-info: var(--nx-info);
+  --color-info-surface: var(--nx-info-surface);
+  --color-neutral: var(--nx-neutral);
+  --color-neutral-surface: var(--nx-neutral-surface);
+
+  --font-sans: var(--font-geist-sans), 'Inter', system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, 'SFMono-Regular', monospace;
+
+  --radius-nx: var(--nx-radius);
+  --radius-nx-sm: var(--nx-radius-sm);
+
+  --shadow-nx: var(--nx-shadow);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--nx-border-subtle);
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  background: var(--nx-base);
+  color: var(--nx-text);
+  font-family: var(--font-geist-sans), 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers and identifiers line up in columns everywhere they appear. */
+.nx-numeric {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+::selection {
+  background: var(--nx-accent);
+  color: var(--nx-base);
+}
+
+:focus-visible {
+  outline: 2px solid var(--nx-accent);
+  outline-offset: 2px;
+}
+
+/* Scrollbars in the control-tower palette rather than the OS default. */
+* {
+  scrollbar-color: var(--nx-border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+/* Motion is purposeful, and optional. Anything that animates does so through
+   the helpers in src/components/nexus/motion.ts, which read the same
+   preference; this block covers CSS transitions and third-party animation. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

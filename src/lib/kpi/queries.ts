@@ -99,6 +99,27 @@ export async function getKpiComparison(params: KpiQuery): Promise<KpiComparison>
 }
 
 /**
+ * The same range compared against an explicitly chosen baseline window.
+ *
+ * Calendar-aligned ranges need this: "today so far" wants the same hours
+ * yesterday, not the equally long slice that ends at midnight, and "the last
+ * seven days" wants the seven before them up to the same time of day. Only the
+ * caller knows which calendar the range was built on, so it supplies the
+ * baseline rather than having one inferred here.
+ */
+export async function getKpiComparisonAgainst(
+  params: KpiQuery,
+  previousRange: DateRange,
+): Promise<KpiComparison> {
+  const [current, previous] = await Promise.all([
+    getKpiSummary(params),
+    getKpiSummary({ ...params, from: previousRange.from, to: previousRange.to }),
+  ]);
+
+  return { current, previous };
+}
+
+/**
  * Percentage change between two values, or null when there is no meaningful
  * baseline (a previous value of zero or a missing metric).
  */

@@ -10,9 +10,10 @@ milestones — an AI analyst that explains *why* a number moved.
 This repository is built in public as a portfolio project, with a live demo
 running on seeded but realistic data.
 
-> **Status: Week 1 — foundations.** The schema, the demo data engine and the
-> KPI layer are complete and verified. The UI is a deliberate placeholder that
-> proves the pipeline works end to end; the real control tower comes next.
+> **Status: Week 1 — foundations and the Command Center.** The schema, the
+> demo data engine and the KPI layer are complete and verified, and the
+> Command Center is built on top of them. The other seven sections of the
+> product are routed and stated but not yet built.
 
 ---
 
@@ -22,16 +23,20 @@ running on seeded but realistic data.
 | --- | --- |
 | Postgres schema, indexes, Realtime, RLS | Done |
 | Demo data engine (90 days, ~338k rows) | Done |
-| Deterministic KPI layer (10 metrics) | Done |
-| Placeholder home page reading live KPIs | Done |
-| Control tower UI, maps, charts, AI analyst | Not started |
+| Deterministic KPI layer | Done |
+| Design system, tokens and component library | Done |
+| App shell: navigation, range and zone filters | Done |
+| Command Center: KPIs, trend, zones, alerts, map | Done |
+| Live Map, Orders, Drivers, Fleet, Analytics | Not started |
+| Simulator, AI analyst | Not started |
 
 ## Stack
 
 - **Next.js 15** (App Router) + **TypeScript** in strict mode
-- **Tailwind CSS v4** with **shadcn/ui** conventions
+- **Tailwind CSS v4**, dark-first design tokens declared as CSS variables
 - **Supabase** (Postgres + Realtime) via `@supabase/supabase-js`
-- **Recharts**, **MapLibre GL**, **Framer Motion** (installed now, used later)
+- **Recharts** for charts, **MapLibre GL** with CARTO basemap tiles (no API
+  key), **Framer Motion** for the little motion there is
 - **pnpm**, deployed to **Vercel**
 
 ## Getting started
@@ -87,8 +92,18 @@ and a pass/fail line for every demo story and baseline target.
 pnpm dev
 ```
 
-The home page lists the ten headline KPIs for the last seven days, read live
-from Postgres.
+The Command Center opens on the last seven days across all zones: eight
+headline KPIs with a delta against the same window before it, orders and
+on-time rate over the range, zone performance, rule-based alerts and a zone
+map. Both filters live in the URL, so `/?range=30d&zone=Z04` is a link worth
+sending to a colleague.
+
+### Applying migrations from CI
+
+Direct Postgres connections to Supabase are blocked from some environments.
+The **Database setup** workflow (`.github/workflows/db-setup.yml`) runs the
+migrations, and optionally the seed, from a GitHub runner instead. It needs a
+`DATABASE_URL` repository secret and is started by hand from the Actions tab.
 
 ### Without a database
 
@@ -120,11 +135,14 @@ pnpm tsx scripts/seed/dry-run.ts
 src/
   app/                 Next.js App Router pages
   components/
-    ui/                shadcn/ui primitives
-    nexus/             product components (control tower, charts, map)
+    nexus/             the design system: tiles, cards, tables, badges
+    shell/             navigation rail, top bar, filters
+    command-center/    the Command Center's panels
   lib/
+    alerts/            rule-based alert generation
     db/                Postgres pool, Supabase clients, domain types
-    kpi/               deterministic KPI queries and formatting
+    fleet/             driver positions
+    kpi/               deterministic KPI queries, series and formatting
     sim/               the demo data engine
 scripts/
   migrate.ts           migration runner
@@ -161,6 +179,15 @@ Every metric accepts a date range and an optional zone. The range is half-open,
 `[from, to)`. The definitions are documented inline in
 `supabase/migrations/0002_kpi_functions.sql`.
 
+Two further functions, added in `0003_dashboard_queries.sql`, use the same
+expressions over the same tables so a point on a chart can never disagree with
+the tile above it:
+
+- `kpi_series(...)` buckets the headline metrics by hour or by day and returns
+  empty buckets as zero rows, so a chart does not silently skip a quiet night.
+- `zone_performance(...)` returns one row per zone, geometry included, so the
+  zone table and the map are fed by a single round trip.
+
 These numbers are **deterministic**: the same rows and the same arguments
 always produce the same output. No AI touches them. The AI layer, when it
 arrives, will explain and contextualise these figures — never compute them.
@@ -173,6 +200,21 @@ Two details worth knowing:
 - Daily costs post when the operating day closes. A rolling window of N days
   therefore contains exactly N daily postings, which is what keeps
   period-over-period comparisons honest.
+
+## Alerts
+
+Alerts are derived from the current contents of the database by the rules in
+`src/lib/alerts`, never read from the `alerts` table, so an alert disappears
+the moment the condition behind it does. Four rules fire today: a zone whose
+demand has outgrown the drivers based in it, a vehicle burning more fuel per
+kilometre than its peers, a lopsided roster, and a single day where delays
+spiked clear of the rest.
+
+Each rule compares a subject against its own peers rather than a fixed number,
+so they keep working as the operation grows. Thresholds live in one file,
+`src/lib/alerts/rules.ts`. The scan window is a fixed fourteen days rather than
+the range selected in the top bar: filtering the dashboard down to today should
+not hide the van that has been drinking fuel all fortnight.
 
 ## The demo data engine
 
